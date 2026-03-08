@@ -121,8 +121,8 @@ def main():
     separator("LINKEDIN POST")
     linkedin_text = f"{title}\n\n{plain_body}"
     print(linkedin_text)
-    copy_to_clipboard(linkedin_text)
     input("\nPress Enter to open LinkedIn in your browser...")
+    copy_to_clipboard(linkedin_text)
     webbrowser.open(LINKEDIN_URL)
 
     separator("Done")
