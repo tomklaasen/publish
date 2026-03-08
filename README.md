@@ -19,10 +19,11 @@ Copy `.env.example` to `.env` and fill in the values:
 cp .env.example .env
 ```
 
-| Variable       | Description                                                    |
-|----------------|----------------------------------------------------------------|
-| `DRAFTS_DIR`   | Directory containing markdown files ready to publish           |
-| `PUBLISHED_DIR`| Directory where files are moved after the script runs          |
+| Variable          | Description                                                 |
+|-------------------|-------------------------------------------------------------|
+| `DRAFTS_DIR`      | Directory containing markdown files ready to publish        |
+| `PUBLISHED_DIR`   | Directory where files are moved after the script runs       |
+| `SQUARESPACE_URL` | URL of the Squarespace blog editor page                     |
 
 ## Usage
 

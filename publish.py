@@ -12,7 +12,6 @@ import os
 
 load_dotenv(Path(__file__).parent / '.env')
 
-SQUARESPACE_URL = "https://springtail-gopher-mt8f.squarespace.com/config/pages/5e2573cadcc09322ea070baa"
 LINKEDIN_URL = "https://www.linkedin.com/feed/"
 
 
@@ -114,8 +113,12 @@ def main():
     print(f"TITLE:\n{title}\n")
     print(f"BODY:\n{plain_body}")
     copy_to_clipboard(f"{title}\n\n{plain_body}")
+    squarespace_url = os.getenv('SQUARESPACE_URL')
+    if not squarespace_url:
+        print("Error: SQUARESPACE_URL is not set in .env")
+        sys.exit(1)
     input("\nPress Enter to open Squarespace in your browser...")
-    webbrowser.open(SQUARESPACE_URL)
+    webbrowser.open(squarespace_url)
 
     # --- LinkedIn ---
     separator("LINKEDIN POST")
