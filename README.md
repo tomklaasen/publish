@@ -39,7 +39,7 @@ python publish.py my-post.md
 
 1. The script prints the blog post (title + body) and copies it to your clipboard.
 2. Press Enter — Squarespace opens in your browser. Paste the title and body.
-3. The script prints the LinkedIn post and copies it to your clipboard.
+3. The script prints the LinkedIn post body and copies it to your clipboard.
 4. Press Enter — LinkedIn opens in your browser. Paste and review before posting.
 5. The markdown file is moved to `PUBLISHED_DIR`.
 
