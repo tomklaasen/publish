@@ -4,11 +4,12 @@ A script that takes a markdown post and prepares it for publishing to a Squaresp
 
 ## Dependencies
 
-- Python 3
-- [python-dotenv](https://pypi.org/project/python-dotenv/)
+- [uv](https://docs.astral.sh/uv/) (`brew install uv`)
+
+Dependencies are declared in `pyproject.toml`. Create the virtual environment (`.venv`) with:
 
 ```bash
-pip install python-dotenv
+uv sync
 ```
 
 ## Setup
@@ -28,11 +29,12 @@ cp .env.example .env
 ## Usage
 
 ```bash
-# Pick a random file from DRAFTS_DIR
-python publish.py
+# Pick the file with the oldest publish_date up to today from DRAFTS_DIR
+# (or a random file without a publish_date if there is none)
+uv run publish.py
 
 # Use a specific file (relative to DRAFTS_DIR)
-python publish.py my-post.md
+uv run publish.py my-post.md
 ```
 
 ## Workflow
@@ -45,11 +47,11 @@ python publish.py my-post.md
 
 ## File format
 
-The post title is taken from the filename (without extension). YAML front matter is optional and stripped from the body if present.
+The post title is taken from the filename (without extension). YAML front matter is optional and stripped from the body if present. An optional `publish_date` (ISO format, e.g. `2026-10-23`) determines which file is picked when no file is given: the one with the oldest `publish_date` up to and including today wins. Files with a `publish_date` in the future are skipped. Files without a `publish_date` are only picked (randomly) when no file has a `publish_date` up to today.
 
 ```markdown
 ---
-any: metadata
+publish_date: 2026-10-23
 ---
 
 Your post content here...

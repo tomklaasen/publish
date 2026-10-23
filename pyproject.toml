@@ -1,0 +1,9 @@
+[project]
+name = "publish"
+version = "0.1.0"
+description = "Prepare a markdown post for publishing to Squarespace and LinkedIn"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv",
+]

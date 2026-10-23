@@ -3,6 +3,7 @@
 import sys
 import re
 import random
+from datetime import date, datetime
 import shutil
 import subprocess
 import webbrowser
@@ -69,7 +70,19 @@ def separator(title):
     print(f"{bar}\n")
 
 
-def pick_random_file():
+def get_publish_date(path):
+    metadata, _ = parse_front_matter(path.read_text(encoding='utf-8'))
+    value = metadata.get('publish_date')
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        print(f"Warning: invalid publish_date '{value}' in {path.name} — ignored.")
+        return None
+
+
+def pick_file():
     drafts_dir = os.getenv('DRAFTS_DIR')
     if not drafts_dir:
         print("Error: DRAFTS_DIR is not set in .env")
@@ -79,14 +92,30 @@ def pick_random_file():
     if not files:
         print(f"Error: no markdown files found in {drafts_path}")
         sys.exit(1)
-    chosen = random.choice(files)
+    today = date.today()
+    dated = []
+    undated = []
+    for f in files:
+        publish_date = get_publish_date(f)
+        if publish_date is None:
+            undated.append(f)
+        elif publish_date.date() <= today:
+            dated.append((publish_date, f))
+    if dated:
+        publish_date, chosen = min(dated, key=lambda item: item[0])
+        print(f"Selected oldest publish_date ({publish_date.date()}): {chosen.name}")
+        return chosen
+    if not undated:
+        print(f"Error: no files with a publish_date up to today or without a publish_date in {drafts_path}")
+        sys.exit(1)
+    chosen = random.choice(undated)
     print(f"Randomly selected: {chosen.name}")
     return chosen
 
 
 def main():
     if len(sys.argv) == 1:
-        filepath = pick_random_file()
+        filepath = pick_file()
     elif len(sys.argv) == 2:
         drafts_dir = os.getenv('DRAFTS_DIR')
         if not drafts_dir:
