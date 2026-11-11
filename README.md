@@ -43,7 +43,7 @@ uv run publish.py my-post.md
 2. Press Enter — Squarespace opens in your browser. Paste the title and body.
 3. The script prints the LinkedIn post body and copies it to your clipboard.
 4. Press Enter — LinkedIn opens in your browser. Paste and review before posting.
-5. The markdown file is moved to `PUBLISHED_DIR`.
+5. The markdown file is moved to `PUBLISHED_DIR`, with its `publish_date` set to today (added to the front matter if missing).
 
 ## File format
 
