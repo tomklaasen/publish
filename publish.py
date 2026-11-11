@@ -82,6 +82,21 @@ def get_publish_date(path):
         return None
 
 
+def set_publish_date(content, value):
+    line = f"publish_date: {value}"
+    if content.startswith('---'):
+        end = content.find('---', 3)
+        if end != -1:
+            front_matter = content[3:end]
+            pattern = re.compile(r'^publish_date\s*:.*$', flags=re.MULTILINE)
+            if pattern.search(front_matter):
+                front_matter = pattern.sub(line, front_matter, count=1)
+            else:
+                front_matter = front_matter.rstrip('\n') + f"\n{line}\n"
+            return f"---{front_matter}{content[end:]}"
+    return f"---\n{line}\n---\n\n{content}"
+
+
 def pick_file():
     drafts_dir = os.getenv('DRAFTS_DIR')
     if not drafts_dir:
@@ -165,6 +180,7 @@ def main():
     else:
         dest = Path(published_dir).expanduser()
         dest.mkdir(parents=True, exist_ok=True)
+        Path(filepath).write_text(set_publish_date(content, date.today().isoformat()), encoding='utf-8')
         shutil.move(str(filepath), dest / Path(filepath).name)
         print(f"Moved to: {dest / Path(filepath).name}")
 
