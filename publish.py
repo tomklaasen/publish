@@ -2,8 +2,11 @@
 
 import sys
 import re
+import json
 import random
-from datetime import date, datetime
+import tempfile
+import unicodedata
+from datetime import date, datetime, timezone
 import shutil
 import subprocess
 import webbrowser
@@ -14,6 +17,7 @@ import os
 load_dotenv(Path(__file__).parent / '.env')
 
 LINKEDIN_URL = "https://www.linkedin.com/feed/"
+BLOG_DIR = Path('site/src/content/blog')
 
 
 def parse_front_matter(content):
@@ -68,6 +72,105 @@ def separator(title):
     print(f"\n{bar}")
     print(f"  {title}")
     print(f"{bar}\n")
+
+
+def slugify(title):
+    text = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+
+def plain_text(md):
+    # Same as platteTekst() in the website repo (site/src/lib/tekst.mjs)
+    text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', md)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'[*_`#>]', '', text)
+    text = re.sub(r'\\([\\\[\]().\-!])', r'\1', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def make_description(md, minimum=100, maximum=155):
+    # Same as inkorten(eersteAlineas(md, 100), 155) in the website repo
+    text = ''
+    for block in re.split(r'\n{2,}', md):
+        if re.match(r'^\s*(!\[|#|<|\[!|:::)', block):
+            continue
+        text = f"{text} {plain_text(block)}".strip()
+        if len(text) >= minimum:
+            break
+    if len(text) <= maximum:
+        return text
+    short = text[:maximum - 1]
+    return re.sub(r'[\s,;:.–-]+$', '', short[:short.rfind(' ')]) + '…'
+
+
+def blog_post(title, body, now=None):
+    now = now or datetime.now(timezone.utc)
+    frontmatter = {
+        'title': title,
+        'slug': slugify(title),
+        'date': now.astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
+        'categories': [],
+        'description': make_description(body),
+    }
+    lines = []
+    for key, value in frontmatter.items():
+        if isinstance(value, list):
+            value = '[' + ', '.join(json.dumps(v, ensure_ascii=False) for v in value) + ']'
+        else:
+            value = json.dumps(value, ensure_ascii=False)
+        lines.append(f"{key}: {value}")
+    return frontmatter['slug'], "---\n" + "\n".join(lines) + "\n---\n\n" + body.strip() + "\n"
+
+
+def run(cmd, cwd):
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error: {' '.join(cmd)} failed:\n{result.stderr.strip() or result.stdout.strip()}")
+        sys.exit(1)
+    return result.stdout.strip()
+
+
+def publish_to_website(title, body, create_pr=True):
+    """Write the post to the website repo on a new branch, push it and open a PR. Returns the PR URL."""
+    website_repo = os.getenv('WEBSITE_REPO')
+    if not website_repo:
+        print("Error: WEBSITE_REPO is not set in .env")
+        sys.exit(1)
+    repo = Path(website_repo).expanduser()
+    slug, post = blog_post(title, body)
+    if not slug:
+        print(f"Error: cannot make a slug from title '{title}'")
+        sys.exit(1)
+    branch = f"blog/{slug}"
+    run(['git', 'fetch', 'origin', 'main'], repo)
+    if run(['git', 'ls-tree', '--name-only', 'origin/main', str(BLOG_DIR / f"{slug}.md")], repo):
+        print(f"Error: {BLOG_DIR / f'{slug}.md'} already exists on main in {repo}")
+        sys.exit(1)
+    if run(['git', 'branch', '--list', branch], repo):
+        print(f"Error: branch '{branch}' already exists in {repo}")
+        sys.exit(1)
+
+    # A separate worktree, so the checkout in WEBSITE_REPO is left alone.
+    worktree = Path(tempfile.mkdtemp(prefix='publish-')) / slug
+    run(['git', 'worktree', 'add', '--no-track', '-b', branch, str(worktree), 'origin/main'], repo)
+    try:
+        target = worktree / BLOG_DIR / f"{slug}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(post, encoding='utf-8')
+        print(f"Written: {BLOG_DIR / target.name} on branch {branch}")
+        run(['git', 'add', str(target)], worktree)
+        run(['git', 'commit', '-m', f"Blogpost: {title}"], worktree)
+        if not create_pr:
+            return None
+        run(['git', 'push', '-u', 'origin', branch], worktree)
+        return run(['gh', 'pr', 'create', '--base', 'main', '--head', branch,
+                    '--title', f"Blogpost: {title}",
+                    '--body', f"Nieuwe blogpost `{slug}`, aangemaakt met publish.py. Mergen zet hem online."],
+                   worktree)
+    finally:
+        subprocess.run(['git', 'worktree', 'remove', '--force', str(worktree)], cwd=repo, capture_output=True)
+        shutil.rmtree(worktree.parent, ignore_errors=True)
 
 
 def get_publish_date(path):
@@ -152,17 +255,15 @@ def main():
     _, body = parse_front_matter(content)
     plain_body = markdown_to_text(body)
 
-    # --- Squarespace ---
-    separator("BLOG POST — Squarespace")
+    # --- Website (Astro) ---
+    separator("BLOG POST — softwarecaptains.be")
     print(f"TITLE:\n{title}\n")
-    print(f"BODY:\n{plain_body}")
-    copy_to_clipboard(f"{title}\n\n{plain_body}")
-    squarespace_url = os.getenv('SQUARESPACE_URL')
-    if not squarespace_url:
-        print("Error: SQUARESPACE_URL is not set in .env")
-        sys.exit(1)
-    input("\nPress Enter to open Squarespace in your browser...")
-    webbrowser.open(squarespace_url)
+    print(f"BODY:\n{body.strip()}")
+    input("\nPress Enter to commit this post to the website repo and open a PR...")
+    pr_url = publish_to_website(title, body)
+    print(f"Pull request: {pr_url}")
+    print("Merging the PR to main puts the post online.")
+    webbrowser.open(pr_url)
 
     # --- LinkedIn ---
     separator("LINKEDIN POST")
@@ -172,7 +273,7 @@ def main():
     webbrowser.open(LINKEDIN_URL)
 
     separator("Done")
-    print("Both pages are open. Paste and review before publishing.\n")
+    print("The PR and LinkedIn are open. Review and merge the PR, paste and review the LinkedIn post.\n")
 
     published_dir = os.getenv('PUBLISHED_DIR')
     if not published_dir:
