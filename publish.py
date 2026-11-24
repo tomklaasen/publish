@@ -18,6 +18,8 @@ load_dotenv(Path(__file__).parent / '.env')
 
 LINKEDIN_URL = "https://www.linkedin.com/feed/"
 BLOG_DIR = Path('site/src/content/blog')
+IMAGE_DIR = Path('site/public/blog-beelden')
+OBSIDIAN_EMBED = re.compile(r'!\[\[([^\]|]+)(?:\|([^\]]*))?\]\]')
 
 
 def parse_front_matter(content):
@@ -51,6 +53,7 @@ def markdown_to_text(md):
     text = re.sub(r'__(.+?)__', r'\1', text)
     text = re.sub(r'_(.+?)_', r'\1', text)
     # Convert links to plain text
+    text = OBSIDIAN_EMBED.sub('', text)  # Obsidian embeds
     text = re.sub(r'!\[[^\]]*\]\([^\)]+\)', '', text)  # images
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # links
     # Convert list markers
@@ -104,6 +107,34 @@ def make_description(md, minimum=100, maximum=155):
     return re.sub(r'[\s,;:.–-]+$', '', short[:short.rfind(' ')]) + '…'
 
 
+def find_attachment(name, root):
+    """Find an Obsidian attachment by file name anywhere under root, like Obsidian does."""
+    matches = sorted(p for p in root.rglob(Path(name).name) if p.is_file())
+    if not matches:
+        print(f"Error: image '{name}' not found under {root}")
+        sys.exit(1)
+    return matches[0]
+
+
+def convert_images(body, slug, root):
+    """Replace Obsidian embeds (![[image.png]]) with markdown images.
+
+    Returns the new body and a list of (source path, file name) to copy to IMAGE_DIR / slug.
+    """
+    images = []
+
+    def replace(match):
+        source = find_attachment(match.group(1).strip(), root)
+        name = slugify(source.stem) + source.suffix.lower()
+        images.append((source, name))
+        alt = (match.group(2) or '').strip()
+        if re.fullmatch(r'\d+(x\d+)?', alt):  # ![[image.png|300]] is a width, not alt text
+            alt = ''
+        return f"![{alt}](/{IMAGE_DIR.relative_to('site/public')}/{slug}/{name})"
+
+    return OBSIDIAN_EMBED.sub(replace, body), images
+
+
 def blog_post(title, body, now=None):
     now = now or datetime.now(timezone.utc)
     frontmatter = {
@@ -131,17 +162,19 @@ def run(cmd, cwd):
     return result.stdout.strip()
 
 
-def publish_to_website(title, body, create_pr=True):
+def publish_to_website(title, body, attachments_root, create_pr=True):
     """Write the post to the website repo on a new branch, push it and open a PR. Returns the PR URL."""
     website_repo = os.getenv('WEBSITE_REPO')
     if not website_repo:
         print("Error: WEBSITE_REPO is not set in .env")
         sys.exit(1)
     repo = Path(website_repo).expanduser()
-    slug, post = blog_post(title, body)
+    slug = slugify(title)
     if not slug:
         print(f"Error: cannot make a slug from title '{title}'")
         sys.exit(1)
+    body, images = convert_images(body, slug, attachments_root)
+    _, post = blog_post(title, body)
     branch = f"blog/{slug}"
     run(['git', 'fetch', 'origin', 'main'], repo)
     if run(['git', 'ls-tree', '--name-only', 'origin/main', str(BLOG_DIR / f"{slug}.md")], repo):
@@ -160,6 +193,12 @@ def publish_to_website(title, body, create_pr=True):
         target.write_text(post, encoding='utf-8')
         print(f"Written: {BLOG_DIR / target.name} on branch {branch}")
         run(['git', 'add', str(target)], worktree)
+        for source, name in images:
+            image = worktree / IMAGE_DIR / slug / name
+            image.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, image)
+            print(f"Copied: {source.name} -> {IMAGE_DIR / slug / name}")
+            run(['git', 'add', str(image)], worktree)
         run(['git', 'commit', '-m', f"Blogpost: {title}"], worktree)
         if not create_pr:
             return None
@@ -260,7 +299,8 @@ def main():
     print(f"TITLE:\n{title}\n")
     print(f"BODY:\n{body.strip()}")
     input("\nPress Enter to commit this post to the website repo and open a PR...")
-    pr_url = publish_to_website(title, body)
+    # Obsidian resolves attachments anywhere in the vault; look next to the drafts folder.
+    pr_url = publish_to_website(title, body, Path(filepath).parent.parent)
     print(f"Pull request: {pr_url}")
     print("Merging the PR to main puts the post online.")
     webbrowser.open(pr_url)
